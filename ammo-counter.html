@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ammo Counter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #12122a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      gap: 28px;
+    }
+
+    /* ── Ammo counter rectangle ──────────── */
+    .ammo-counter {
+      position: relative;
+      width: 380px;
+      height: 82px;
+      border-radius: 8px;
+      background: #080816;
+      border: 2px solid #252448;
+      overflow: hidden;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.08s ease-out;
+    }
+
+    /* Fill bar — lives behind everything */
+    .ammo-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: var(--fill, 100%);
+      background: linear-gradient(to right, #25157a, #5a35b0);
+      z-index: 0;
+    }
+
+    /* Subtle edge highlight at fill boundary */
+    .ammo-fill::after {
+      content: '';
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 2px;
+      background: rgba(160, 120, 255, 0.4);
+    }
+
+    /* Darkened overlay on the unfilled side — makes bar edge readable */
+    .ammo-counter::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to right, transparent var(--fill, 100%), #0c0c20 var(--fill, 100%));
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* Shot flash */
+    .shot-flash {
+      position: absolute;
+      inset: 0;
+      background: rgba(180, 140, 255, 0.18);
+      opacity: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+    @keyframes do-flash {
+      0%   { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .shot-flash.firing { animation: do-flash 0.07s ease-out forwards; }
+
+    /* Content layer */
+    .ammo-content {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 22px;
+      gap: 14px;
+      z-index: 2;
+    }
+
+    /* Bullet icon */
+    .bullet-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      opacity: 0.85;
+      flex-shrink: 0;
+      transition: opacity 0.15s;
+    }
+
+    /* Ammo number */
+    .ammo-number {
+      font-size: 52px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1;
+      letter-spacing: -2px;
+      text-shadow: 0 0 20px rgba(0,0,0,0.8);
+      min-width: 2.1ch;
+      transition: color 0.1s;
+    }
+
+    .ammo-denom {
+      font-size: 15px;
+      color: rgba(255, 255, 255, 0.38);
+      align-self: flex-end;
+      padding-bottom: 9px;
+      letter-spacing: 0.5px;
+    }
+
+    /* State label — right side */
+    .ammo-state {
+      margin-left: auto;
+      font-size: 10px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.28);
+      text-align: right;
+      line-height: 1.6;
+      transition: color 0.1s;
+    }
+
+    /* ── State classes ───────────────────── */
+    .s-firing  .ammo-counter { border-color: #6a3acc; }
+    .s-firing  .ammo-state   { color: rgba(190, 150, 255, 0.8); }
+    .s-firing  .ammo-fill    { background: linear-gradient(to right, #2a1880, #6a3acc); }
+
+    .s-empty   .ammo-counter { border-color: #1a1636; }
+    .s-empty   .ammo-number  { color: rgba(255,255,255,0.3); }
+    .s-empty   .bullet-wrap  { opacity: 0.25; }
+    .s-empty   .ammo-state   { color: rgba(140, 110, 200, 0.5); }
+
+    .s-full    .ammo-counter { border-color: #7050d0; box-shadow: 0 0 14px 3px #7f5af044; }
+    .s-full    .ammo-state   { color: rgba(180, 150, 255, 0.7); }
+
+    /* ── Controls card ───────────────────── */
+    .controls {
+      background: #1a1a38;
+      border: 1px solid #2e2e58;
+      border-radius: 14px;
+      padding: 18px 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      width: 380px;
+    }
+
+    .slider-group {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .slider-group label { color: #6060a0; font-size: 11px; letter-spacing: 0.5px; }
+    .slider-group input[type=range] { width: 100%; accent-color: #7f5af0; cursor: pointer; }
+    .slider-group .val { color: #a89bff; font-size: 14px; font-weight: 600; }
+
+    .hint {
+      color: #404068;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+<div id="root">
+
+  <!-- Ammo counter -->
+  <div class="ammo-counter" id="ammoCounter" onclick="toggleFiring()">
+    <div class="ammo-fill"  id="ammoFill"></div>
+    <div class="shot-flash" id="shotFlash"></div>
+    <div class="ammo-content">
+
+      <!-- Bullet icon -->
+      <div class="bullet-wrap">
+        <svg width="16" height="30" viewBox="0 0 16 30">
+          <!-- tip -->
+          <path d="M8 0 C8 0 14 9 14 17 L14 24 Q14 30 8 30 Q2 30 2 24 L2 17 C2 9 8 0 8 0Z"
+                fill="#b09eff" opacity="0.9"/>
+          <!-- casing lines -->
+          <rect x="3" y="21" width="10" height="2" rx="1" fill="#7f5af0" opacity="0.8"/>
+          <rect x="2.5" y="24" width="11" height="3" rx="1" fill="#5a38c8" opacity="0.6"/>
+        </svg>
+      </div>
+
+      <span class="ammo-number" id="ammoNumber">30</span>
+      <span class="ammo-denom">/ 30</span>
+      <span class="ammo-state" id="ammoState">READY</span>
+
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="slider-group">
+      <label>Recharge rate (bullets / sec)</label>
+      <input type="range" id="rechargeSlider" min="1" max="15" value="4"
+             oninput="setRechargeRate(+this.value)">
+      <span class="val" id="rechargeVal">4</span>
+    </div>
+    <div class="hint">click bar to fire · click again to stop</div>
+  </div>
+
+</div>
+
+<script>
+  const MAX_AMMO      = 30;
+  const RPM           = 600;
+  const SHOT_INTERVAL = 60 / RPM;        // ~0.1s between shots
+
+  let ammo             = MAX_AMMO;
+  let rechargeProgress = 0;
+  let rechargeRate     = 4;              // bullets per second
+  let firing           = false;
+  let timeSinceShot    = 0;
+  let lastTime         = null;
+
+  const root       = document.getElementById('root');
+  const ammoFill   = document.getElementById('ammoFill');
+  const ammoNumber = document.getElementById('ammoNumber');
+  const ammoState  = document.getElementById('ammoState');
+  const shotFlash  = document.getElementById('shotFlash');
+  const ammoCounter = document.getElementById('ammoCounter');
+
+  function flash() {
+    shotFlash.classList.remove('firing');
+    void shotFlash.offsetWidth;
+    shotFlash.classList.add('firing');
+    shotFlash.addEventListener('animationend', () => shotFlash.classList.remove('firing'), { once: true });
+  }
+
+  function render() {
+    // Smooth fill: integer ammo + fractional sub-bullet progress
+    const smoothAmmo = ammo + (firing ? 0 : Math.min(rechargeProgress, 1));
+    const fillPct    = (smoothAmmo / MAX_AMMO * 100).toFixed(3);
+
+    ammoFill.style.setProperty('--fill', fillPct + '%');
+    ammoCounter.style.setProperty('--fill', fillPct + '%');   // for ::before
+
+    ammoNumber.textContent = ammo;
+
+    // State
+    let cls = 's-idle';
+    if (firing)              cls = 's-firing';
+    else if (ammo === 0)     cls = 's-empty';
+    else if (ammo === MAX_AMMO) cls = 's-full';
+    root.className = cls;
+
+    // Label
+    if (firing)                    ammoState.textContent = 'FIRING';
+    else if (ammo === 0)           ammoState.textContent = 'RECHARGING';
+    else if (ammo === MAX_AMMO)    ammoState.textContent = 'READY';
+    else                           ammoState.textContent = 'RECHARGING';
+  }
+
+  function tick(ts) {
+    if (!lastTime) lastTime = ts;
+    const dt = Math.min((ts - lastTime) / 1000, 0.1);
+    lastTime = ts;
+
+    if (firing && ammo > 0) {
+      timeSinceShot += dt;
+      while (timeSinceShot >= SHOT_INTERVAL && ammo > 0) {
+        ammo--;
+        timeSinceShot -= SHOT_INTERVAL;
+        flash();
+      }
+      if (ammo === 0) { firing = false; timeSinceShot = 0; }
+      rechargeProgress = 0;
+
+    } else if (!firing && ammo < MAX_AMMO) {
+      const rechargeTime = 1 / rechargeRate;  // seconds per bullet
+      rechargeProgress += dt / rechargeTime;
+      while (rechargeProgress >= 1 && ammo < MAX_AMMO) {
+        ammo++;
+        rechargeProgress -= 1;
+      }
+      if (ammo >= MAX_AMMO) rechargeProgress = 0;
+    }
+
+    render();
+    requestAnimationFrame(tick);
+  }
+
+  function toggleFiring() {
+    if (ammo === 0) return;
+    firing = !firing;
+    if (firing) timeSinceShot = 0;
+    render();
+  }
+
+  function setRechargeRate(v) {
+    rechargeRate = v;
+    document.getElementById('rechargeVal').textContent = v;
+  }
+
+  render();
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>
